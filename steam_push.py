@@ -16,7 +16,7 @@ def get_steam_games():
     soup = BeautifulSoup(res.text, "lxml")
     
     games = []
-    items = soup.find_all("a", class_="tab_item")[:20]
+    items = soup.find_all("a", class_="tab_item")[:10]
     for item in items:
         name = item.find("div", class_="tab_item_name").text.strip()
         link = item["href"]
@@ -31,32 +31,68 @@ def get_steam_games():
         })
     return games
 
-# 单条消息推送，飞书富文本直接显示图片
+# 单条卡片消息推送，使用飞书卡片支持图片直链显示
 def push_to_feishu(games):
-    title = "Steam New & Trending 最新榜单"
-    content = []
+    elements = []
+    elements.append({
+        "tag": "header",
+        "title": {
+            "tag": "plain_text",
+            "content": "📌 Steam New & Trending 最新榜单"
+        }
+    })
     
     for game in games:
-        # 添加标题和价格
-        content.append([
-            {"tag": "a", "href": game["link"], "text": f"{game['name']} - {game['price']}"},
-            {"tag": "text", "text": "\n"}
-        ])
-        # 使用正确的飞书富文本图片语法，直接显示网络图片
-        content.append([
-            {"tag": "img", "image_key": game["img"]}
-        ])
-        content.append([{"tag": "text", "text": "\n"}])
+        elements.append({
+            "tag": "column_set",
+            "flex_mode": "none",
+            "horizontal_spacing": "default",
+            "background_style": "default",
+            "columns": [
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 3,
+                    "elements": [
+                        {
+                            "tag": "img",
+                            "img_key": game["img"],
+                            "alt": {
+                                "tag": "plain_text",
+                                "content": game["name"]
+                            },
+                            "scale_type": "fit_horizontal"
+                        }
+                    ]
+                },
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 7,
+                    "elements": [
+                        {
+                            "tag": "markdown",
+                            "content": f"**[{game['name']}]({game['link']})**\n💰 价格：{game['price']}"
+                        }
+                    ]
+                }
+            ]
+        })
+        elements.append({"tag": "hr"})
     
     # 组装飞书自定义机器人请求体
     data = {
-        "msg_type": "post",
-        "content": {
-            "post": {
-                "zh_cn": {
-                    "title": title,
-                    "content": content
+        "msg_type": "interactive",
+        "card": {
+            "schema": "2.0",
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "Steam New & Trending 最新榜单"
                 }
+            },
+            "body": {
+                "elements": elements
             }
         }
     }
