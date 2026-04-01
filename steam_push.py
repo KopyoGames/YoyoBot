@@ -12,12 +12,18 @@ def get_steam_new_games():
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    res = requests.get(url, headers=headers)
-    data = res.json()
-    # 获取新品榜单
-    new_releases = data.get("new_releases", {}).get("items", [])
-    # 取前10个
-    return new_releases[:10]
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        # 获取新品榜单
+        new_releases = data.get("new_releases", {}).get("items", [])
+        # 取前10个
+        print(f"成功获取到 {len(new_releases)} 款新品")
+        return new_releases[:10]
+    except Exception as e:
+        print(f"获取Steam榜单失败：{str(e)}")
+        return None
 
 # 发送飞书卡片消息
 def send_to_feishu_card(card):
@@ -25,13 +31,20 @@ def send_to_feishu_card(card):
         "msg_type": "interactive",
         "card": card
     }
-    res = requests.post(FEISHU_WEBHOOK, json=data)
-    return res.json()
+    try:
+        res = requests.post(FEISHU_WEBHOOK, json=data, timeout=10)
+        res.raise_for_status()
+        result = res.json()
+        print(f"飞书返回结果：{result}")
+        return result
+    except Exception as e:
+        print(f"发送飞书消息失败：{str(e)}")
+        return None
 
 def main():
     games = get_steam_new_games()
     if not games:
-        print("获取榜单失败")
+        print("未获取到游戏数据，终止推送")
         return
     
     # 构建飞书卡片结构
@@ -56,7 +69,10 @@ def main():
         # 如果简介太长就截断，保证卡片美观
         if len(desc) > 80:
             desc = desc[:77] + "..."
-        link = f"https://store.steampowered.com/app/{game.get('id')}"
+        app_id = game.get("id")
+        if not app_id:
+            continue
+        link = f"https://store.steampowered.com/app/{app_id}"
         
         # 添加游戏信息模块
         element = {
@@ -82,7 +98,11 @@ def main():
     
     # 发送卡片消息
     result = send_to_feishu_card(card)
-    print(result)
+    if result and result.get("code") == 0:
+        print("推送成功")
+    else:
+        print(f"推送失败：{result}")
 
 if __name__ == "__main__":
+    print("开始执行Steam新品推送任务")
     main()
