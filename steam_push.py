@@ -16,7 +16,7 @@ def get_steam_games():
     soup = BeautifulSoup(res.text, "lxml")
     
     games = []
-    items = soup.find_all("a", class_="tab_item")[:10]
+    items = soup.find_all("a", class_="tab_item")[:15]
     for item in items:
         name = item.find("div", class_="tab_item_name").text.strip()
         link = item["href"]
@@ -34,13 +34,13 @@ def get_steam_games():
 # 单条卡片消息推送，使用飞书卡片支持图片直链显示
 def push_to_feishu(games):
     elements = []
+    
+    # 添加标题
     elements.append({
-        "tag": "header",
-        "title": {
-            "tag": "plain_text",
-            "content": "📌 Steam New & Trending 最新榜单"
-        }
+        "tag": "markdown",
+        "content": "## 📌 Steam New & Trending 最新榜单"
     })
+    elements.append({"tag": "hr"})
     
     for game in games:
         elements.append({
@@ -80,15 +80,16 @@ def push_to_feishu(games):
         })
         elements.append({"tag": "hr"})
     
-    # 组装飞书自定义机器人请求体
+    # 组装飞书自定义机器人请求体，使用正确的卡片JSON 2.0结构
     data = {
         "msg_type": "interactive",
         "card": {
             "schema": "2.0",
             "header": {
+                "template": "blue",
                 "title": {
-                    "tag": "plain_text",
-                    "content": "Steam New & Trending 最新榜单"
+                    "content": "Steam New & Trending 最新榜单",
+                    "tag": "plain_text"
                 }
             },
             "body": {
