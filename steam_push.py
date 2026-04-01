@@ -39,23 +39,67 @@ def send_to_feishu(content):
     res = requests.post(FEISHU_WEBHOOK, json=data)
     return res.json()
 
+# 发送飞书卡片消息
+def send_to_feishu_card(card):
+    timestamp = int(time.time())
+    sign = gen_sign(timestamp, FEISHU_SECRET)
+    data = {
+        "msg_type": "interactive",
+        "card": card,
+
+    }
+    res = requests.post(FEISHU_WEBHOOK, json=data)
+    return res.json()
+
 def main():
     games = get_steam_new_games()
     if not games:
         print("获取榜单失败")
         return
     
-    # 整理消息文本
-    msg = "📌 今日Steam新品榜单前10\n\n"
+    # 构建飞书卡片结构
+    card = {
+        "schema": "2.0",
+        "header": {
+            "title": {
+                "tag": "plain_text",
+                "content": "📌 今日Steam新品榜单Top10"
+            },
+            "template": "blue"
+        },
+        "body": {
+            "elements": []
+        }
+    }
+    
+    # 逐个添加游戏信息
     for idx, game in enumerate(games, 1):
         name = game.get("name", "未知名称")
         price = game.get("price_overview", {}).get("final_formatted", "无价格信息")
         link = f"https://store.steampowered.com/app/{game.get('id')}"
-        msg += f"{idx}. {name}\n价格：{price}\n链接：{link}\n\n"
+        
+        # 添加游戏信息模块
+        element = {
+            "tag": "markdown",
+            "content": f"**{idx}. {name}**\n价格：{price}\n[点击前往商店查看]({link})"
+        }
+        card["body"]["elements"].append(element)
+        # 添加分隔线
+        if idx != len(games):
+            card["body"]["elements"].append({"tag": "hr"})
     
-    msg += "数据更新时间：" + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    result = send_to_feishu(msg)
+    # 添加更新时间
+    time_text = f"数据更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}"
+    card["body"]["elements"].append({
+        "tag": "note",
+        "elements": [
+            {
+                "tag": "plain_text",
+                "content": time_text
+            }
+        ]
+    })
+    
+    # 发送卡片消息
+    result = send_to_feishu_card(card)
     print(result)
-
-if __name__ == "__main__":
-    main()
