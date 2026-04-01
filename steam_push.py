@@ -25,6 +25,24 @@ def get_steam_new_games():
         print(f"获取Steam榜单失败：{str(e)}")
         return None
 
+# 获取单个游戏的详情（含简介）
+def get_game_desc(app_id):
+    url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&cc=cn&l=zh"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        if data[str(app_id)]["success"]:
+            return data[str(app_id)]["data"].get("short_description", "暂无简介")
+        else:
+            return "暂无简介"
+    except Exception as e:
+        print(f"获取游戏 {app_id} 简介失败：{str(e)}")
+        return "暂无简介"
+
 # 发送飞书卡片消息
 def send_to_feishu_card(card):
     data = {
@@ -65,13 +83,14 @@ def main():
     # 逐个添加游戏信息
     for idx, game in enumerate(games, 1):
         name = game.get("name", "未知名称")
-        desc = game.get("short_description", "暂无简介")
-        # 如果简介太长就截断，保证卡片美观
-        if len(desc) > 80:
-            desc = desc[:77] + "..."
         app_id = game.get("id")
         if not app_id:
             continue
+        # 获取游戏简介
+        desc = get_game_desc(app_id)
+        # 如果简介太长就截断，保证卡片美观
+        if len(desc) > 80:
+            desc = desc[:77] + "..."
         link = f"https://store.steampowered.com/app/{app_id}"
         
         # 添加游戏信息模块
@@ -84,7 +103,7 @@ def main():
         if idx != len(games):
             card["body"]["elements"].append({"tag": "hr"})
     
-    # 添加更新时间：替换note为markdown组件，符合V2规范
+    # 添加更新时间：符合V2规范的markdown组件
     time_text = f"数据更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}"
     card["body"]["elements"].append({
         "tag": "markdown",
