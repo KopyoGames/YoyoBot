@@ -30,11 +30,15 @@ def gen_sign(timestamp, secret):
 
 # 发送消息到飞书
 def send_to_feishu(content):
+    timestamp = int(time.time())
+    sign = gen_sign(timestamp, FEISHU_SECRET)
     data = {
         "msg_type": "text",
         "content": {
             "text": content
-        }
+        },
+        "timestamp": timestamp,
+        "sign": sign
     }
     res = requests.post(FEISHU_WEBHOOK, json=data)
     return res.json()
