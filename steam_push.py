@@ -84,16 +84,12 @@ def main():
         if idx != len(games):
             card["body"]["elements"].append({"tag": "hr"})
     
-    # 添加更新时间
+    # 添加更新时间：替换note为markdown组件，符合V2规范
     time_text = f"数据更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}"
     card["body"]["elements"].append({
-        "tag": "note",
-        "elements": [
-            {
-                "tag": "plain_text",
-                "content": time_text
-            }
-        ]
+        "tag": "markdown",
+        "content": time_text,
+        "text_size": "notation"
     })
     
     # 发送卡片消息
