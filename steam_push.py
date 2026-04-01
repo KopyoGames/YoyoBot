@@ -19,7 +19,7 @@ def get_steam_trending_games():
         data = res.json()
         
         # 直接获取 New & Trending (热门新品) 榜单前20名
-        trending_games = data.get("new_releases", {}).get("items", [])[:20]
+        trending_games = data.get("new_releases", {}).get("items", [])[:10]
         
         print(f"成功抓取当前热门新品榜前 {len(trending_games)} 款游戏")
         return trending_games
