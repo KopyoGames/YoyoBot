@@ -20,24 +20,41 @@ def get_steam_new_games():
         data = res.json()
         # 获取新品榜单前30
         new_releases = data.get("new_releases", {}).get("items", [])[:30]
-        # 计算东八区昨天0点和今天0点的时间戳，覆盖昨天整整24小时
-        today_zero = int(time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")))
+        
+        # 计算东八区昨天0点和今天0点的时间戳（统一转时间戳比较）
+        # 获取当前东八区时间
+        local_time = time.localtime()
+        today_zero = int(time.mktime(time.strptime(time.strftime("%Y-%m-%d", local_time), "%Y-%m-%d")))
         yesterday_zero = today_zero - 24 * 3600  # 昨天0点 = 今天0点 - 24小时
         today_zero = yesterday_zero + 24 * 3600  # 今天0点 = 昨天0点 + 24小时
+        
+        print(f"筛选范围：时间戳 {yesterday_zero} ~ {today_zero}")
+        print(f"对应时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(yesterday_zero))} ~ {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(today_zero))}")
+
         # 筛选【昨天0点 ~ 今天0点】之间发售的游戏，覆盖昨天整整24小时
         yesterday_games = []
-        for game in new_releases:
+        for idx, game in enumerate(new_releases):
+            name = game.get("name", "未知名称")
             release_date = game.get("release_date", {}).get("date", 0)
-            # Steam部分返回的是字符串时间，统一转换时间戳
+            print(f"检查游戏：{name}，发售时间戳：{release_date}")
+            
+            # Steam榜单接口返回的date本身就是时间戳，直接用即可，仅字符串需要转换
             if isinstance(release_date, str):
                 try:
                     release_date = int(time.mktime(time.strptime(release_date, "%Y-%m-%d")))
-                except:
+                    print(f"  转换字符串日期为时间戳：{release_date}")
+                except Exception as e:
+                    print(f"  日期转换失败，跳过：{str(e)}")
                     continue
+            
             # 判断发售时间在东八区昨天24小时范围内
             if yesterday_zero <= release_date < today_zero:
+                print(f"  ✅ 符合条件，加入推送列表")
                 yesterday_games.append(game)
-        print(f"前30新品中找到 {len(yesterday_games)} 款昨天东八区全天新发售的游戏")
+            else:
+                print(f"  ❌ 不在筛选范围，跳过")
+        
+        print(f"最终找到 {len(yesterday_games)} 款符合条件的游戏")
         return yesterday_games
     except Exception as e:
         print(f"获取Steam榜单失败：{str(e)}")
@@ -155,20 +172,4 @@ def main():
             card["body"]["elements"].append({"tag": "hr"})
     
     # 添加统计信息
-    info_text = f"本次共推送 {len(games)} 款昨日新发（东八区全天） | 更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}"
-    card["body"]["elements"].append({
-        "tag": "markdown",
-        "content": info_text,
-        "text_size": "notation"
-    })
-    
-    # 发送卡片消息
-    result = send_to_feishu_card(card)
-    if result and result.get("code") == 0:
-        print("推送成功")
-    else:
-        print(f"推送失败：{result}")
-
-if __name__ == "__main__":
-    print("开始执行Steam昨日新发推送任务")
-    main()
+    info_text = f"本次共推送 {len(games)} 款昨日新发（东八区全天） | 更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
