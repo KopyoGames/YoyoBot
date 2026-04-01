@@ -172,4 +172,6 @@ def main():
             card["body"]["elements"].append({"tag": "hr"})
     
     # 添加统计信息
-    info_text = f"本次共推送 {len(games)} 款昨日新发（东八区全天） | 更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+    info_text = f"本次共推送 {len(games)} 款昨日新发（东八区全天） | 更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}"
+    card["body"]["elements"].append({
+        "tag
