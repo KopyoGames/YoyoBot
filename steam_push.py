@@ -16,7 +16,7 @@ def get_steam_games():
     soup = BeautifulSoup(res.text, "lxml")
     
     games = []
-    items = soup.find_all("a", class_="tab_item")[:10]
+    items = soup.find_all("a", class_="tab_item")[:20]
     for item in items:
         name = item.find("div", class_="tab_item_name").text.strip()
         link = item["href"]
@@ -42,7 +42,7 @@ def push_to_feishu(games):
             {"tag": "a", "href": game["link"], "text": f"{game['name']} - {game['price']}"},
             {"tag": "text", "text": "\n"}
         ])
-        // 使用正确的飞书富文本图片语法，直接显示网络图片
+        # 使用正确的飞书富文本图片语法，直接显示网络图片
         content.append([
             {"tag": "img", "image_key": game["img"]}
         ])
