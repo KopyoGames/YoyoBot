@@ -10,14 +10,17 @@ FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")
 FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET")
 FEISHU_CHAT_ID = os.environ.get("FEISHU_CHAT_ID")
 
-# 获取飞书访问凭证
+# 获取飞书 tenant_access_token（应用身份访问凭证，正确类型）
 def get_tenant_access_token():
-    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/"
     data = {
         "app_id": FEISHU_APP_ID,
         "app_secret": FEISHU_APP_SECRET
     }
     res = requests.post(url, json=data).json()
+    if res.get("code") != 0:
+        print(f"获取tenant_access_token失败：{res}")
+        return None
     return res.get("tenant_access_token")
 
 # 上传图片到飞书，获取image_key
@@ -30,7 +33,7 @@ def upload_image(image_url, token):
     img.save(buf, format='JPEG', quality=80)
     buf.seek(0)
     
-    # 调用上传接口
+    # 调用上传接口，只支持tenant_access_token，已正确配置
     url = "https://open.feishu.cn/open-apis/im/v1/images"
     files = {
         'image': ('image.jpg', buf, 'image/jpeg')
@@ -125,6 +128,9 @@ def push_to_feishu(games, token):
 if __name__ == "__main__":
     print("开始执行 Steam 热门新品榜推送任务")
     token = get_tenant_access_token()
+    if not token:
+        print("无法获取有效访问凭证，请检查App ID和App Secret是否正确")
+        exit(1)
     games = get_steam_games()
     print(f"成功抓取当前热门新品榜前 {len(games)} 款游戏")
     push_to_feishu(games, token)
