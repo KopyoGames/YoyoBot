@@ -3,10 +3,41 @@ import time
 import json
 import os
 import base64
+import re
 from io import BytesIO
+from datetime import datetime, timedelta, timezone
 
 # 从环境变量读取配置
 FEISHU_WEBHOOK = os.getenv("FEISHU_WEBHOOK")
+
+# 解析 Steam 多种日期格式到东八区时间戳的辅助函数
+def parse_steam_date_to_timestamp(date_str, tz_info):
+    if not date_str:
+        return 0
+    # 匹配中文格式 "2024年3月28日" 或 "2024 年 3 月 28 日"
+    m = re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", date_str)
+    if m:
+        y, mon, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return int(datetime(y, mon, d, tzinfo=tz_info).timestamp())
+        
+    # 匹配标准格式 "2024-03-28"
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", date_str)
+    if m:
+        y, mon, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return int(datetime(y, mon, d, tzinfo=tz_info).timestamp())
+        
+    # 匹配英文格式 "28 Mar, 2024" 或 "Mar 28, 2024" (防备接口语言回退)
+    months = {"Jan":1, "Feb":2, "Mar":3, "Apr":4, "May":5, "Jun":6, "Jul":7, "Aug":8, "Sep":9, "Oct":10, "Nov":11, "Dec":12}
+    m = re.search(r"(\d{1,2})\s+([A-Z][a-z]{2}),\s+(\d{4})", date_str)
+    if m:
+        y, mon, d = int(m.group(3)), months.get(m.group(2), 1), int(m.group(1))
+        return int(datetime(y, mon, d, tzinfo=tz_info).timestamp())
+    m = re.search(r"([A-Z][a-z]{2})\s+(\d{1,2}),\s+(\d{4})", date_str)
+    if m:
+        y, mon, d = int(m.group(3)), months.get(m.group(1), 1), int(m.group(2))
+        return int(datetime(y, mon, d, tzinfo=tz_info).timestamp())
+        
+    return 0
 
 # 获取Steam新品榜单前30，筛选东八区昨天0点~今天0点内新发售的游戏
 def get_steam_new_games():
@@ -18,43 +49,38 @@ def get_steam_new_games():
         res = requests.get(url, headers=headers, timeout=10)
         res.raise_for_status()
         data = res.json()
+        
         # 获取新品榜单前30
         new_releases = data.get("new_releases", {}).get("items", [])[:30]
         
-        # 计算东八区昨天0点和今天0点的时间戳（统一转时间戳比较）
-        # 获取当前东八区时间
-        local_time = time.localtime()
-        today_zero = int(time.mktime(time.strptime(time.strftime("%Y-%m-%d", local_time), "%Y-%m-%d")))
-        yesterday_zero = today_zero - 24 * 3600  # 昨天0点 = 今天0点 - 24小时
-        today_zero = yesterday_zero + 24 * 3600  # 今天0点 = 昨天0点 + 24小时
+        # 【修改点1】：强制使用 datetime 生成精确的东八区时间，摆脱服务器系统时区影响
+        tz_utc_8 = timezone(timedelta(hours=8))
+        now_utc8 = datetime.now(tz_utc_8)
         
-        print(f"筛选范围：时间戳 {yesterday_zero} ~ {today_zero}")
-        print(f"对应时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(yesterday_zero))} ~ {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(today_zero))}")
-
-        # 筛选【昨天0点 ~ 今天0点】之间发售的游戏，覆盖昨天整整24小时
+        # 计算东八区今天0点和昨天0点
+        today_zero_dt = now_utc8.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_zero_dt = today_zero_dt - timedelta(days=1)
+        
+        today_zero = int(today_zero_dt.timestamp())
+        yesterday_zero = int(yesterday_zero_dt.timestamp())
+        
+        # 筛选【昨天0点 ~ 今天0点】之间发售的游戏
         yesterday_games = []
-        for idx, game in enumerate(new_releases):
-            name = game.get("name", "未知名称")
+        for game in new_releases:
             release_date = game.get("release_date", {}).get("date", 0)
-            print(f"检查游戏：{name}，发售时间戳：{release_date}")
+            release_timestamp = 0
             
-            # Steam榜单接口返回的date本身就是时间戳，直接用即可，仅字符串需要转换
-            if isinstance(release_date, str):
-                try:
-                    release_date = int(time.mktime(time.strptime(release_date, "%Y-%m-%d")))
-                    print(f"  转换字符串日期为时间戳：{release_date}")
-                except Exception as e:
-                    print(f"  日期转换失败，跳过：{str(e)}")
-                    continue
-            
+            # 【修改点2】：兼容处理时间戳或多种格式的字符串
+            if isinstance(release_date, int) and release_date > 0:
+                release_timestamp = release_date
+            elif isinstance(release_date, str):
+                release_timestamp = parse_steam_date_to_timestamp(release_date, tz_utc_8)
+                
             # 判断发售时间在东八区昨天24小时范围内
-            if yesterday_zero <= release_date < today_zero:
-                print(f"  ✅ 符合条件，加入推送列表")
+            if yesterday_zero <= release_timestamp < today_zero:
                 yesterday_games.append(game)
-            else:
-                print(f"  ❌ 不在筛选范围，跳过")
-        
-        print(f"最终找到 {len(yesterday_games)} 款符合条件的游戏")
+                
+        print(f"前30新品中找到 {len(yesterday_games)} 款昨天东八区全天新发售的游戏")
         return yesterday_games
     except Exception as e:
         print(f"获取Steam榜单失败：{str(e)}")
@@ -113,10 +139,11 @@ def main():
     if games is None or len(games) == 0:
         print("昨天东八区全天没有符合条件的新发售游戏，终止推送")
         return
-    
-    # 获取昨天日期，显示在标题
-    yesterday_date = time.strftime("%Y-%m-%d", time.localtime(int(time.time()) - 24 * 3600))
-    
+        
+    # 【修改点3】：标题的昨日日期也强制使用东八区，防止服务器在UTC时间引起的日期漂移
+    tz_utc_8 = timezone(timedelta(hours=8))
+    yesterday_date = (datetime.now(tz_utc_8) - timedelta(days=1)).strftime("%Y-%m-%d")
+        
     # 构建飞书卡片结构
     card = {
         "schema": "2.0",
@@ -131,7 +158,7 @@ def main():
             "elements": []
         }
     }
-    
+        
     # 逐个添加游戏信息
     for idx, game in enumerate(games, 1):
         name = game.get("name", "未知名称")
@@ -142,11 +169,12 @@ def main():
         game_detail = get_game_detail(app_id)
         desc = game_detail["desc"]
         img_content = game_detail["img_content"]
+        
         # 最多保留240字符约3行，超过截断
         if len(desc) > 240:
             desc = desc[:237] + "..."
         link = f"https://store.steampowered.com/app/{app_id}"
-        
+                
         # 添加游戏封面图：使用base64嵌入
         if img_content:
             img_base64 = get_img_base64(img_content)
@@ -160,18 +188,34 @@ def main():
                 }
             }
             card["body"]["elements"].append(img_element)
-        
+                
         # 添加游戏信息模块
         element = {
             "tag": "markdown",
             "content": f"**{idx}. {name}**\n{desc}\n[点击前往商店查看]({link})"
         }
         card["body"]["elements"].append(element)
+        
         # 添加分隔线，最后一个游戏不加分隔线
         if idx != len(games):
             card["body"]["elements"].append({"tag": "hr"})
-    
+
     # 添加统计信息
-    info_text = f"本次共推送 {len(games)} 款昨日新发（东八区全天） | 更新时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}"
+    update_time = datetime.now(tz_utc_8).strftime('%Y-%m-%d %H:%M:%S')
+    info_text = f"本次共推送 {len(games)} 款昨日新发（东八区全天） | 更新时间：{update_time}"
     card["body"]["elements"].append({
-        "tag
+        "tag": "markdown",
+        "content": info_text,
+        "text_size": "notation"
+    })
+        
+    # 发送卡片消息
+    result = send_to_feishu_card(card)
+    if result and result.get("code") == 0:
+        print("推送成功")
+    else:
+        print(f"推送失败：{result}")
+
+if __name__ == "__main__":
+    print("开始执行Steam昨日新发推送任务")
+    main()
