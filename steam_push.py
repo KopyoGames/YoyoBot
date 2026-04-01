@@ -2,56 +2,11 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import json
-import io
-from PIL import Image
 
-# 从环境变量读取配置
-FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")
-FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET")
-FEISHU_CHAT_ID = os.environ.get("FEISHU_CHAT_ID")
+# 从环境变量读取飞书webhook地址
+FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK")
 
-# 获取飞书 tenant_access_token（应用身份访问凭证，正确类型）
-def get_tenant_access_token():
-    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/"
-    data = {
-        "app_id": FEISHU_APP_ID,
-        "app_secret": FEISHU_APP_SECRET
-    }
-    res = requests.post(url, json=data).json()
-    if res.get("code") != 0:
-        print(f"获取tenant_access_token失败：{res}")
-        return None
-    return res.get("tenant_access_token")
-
-# 上传图片到飞书，获取image_key
-def upload_image(image_url, token):
-    # 下载图片
-    img_res = requests.get(image_url)
-    img = Image.open(io.BytesIO(img_res.content))
-    # 压缩图片保证不超过上传大小限制
-    buf = io.BytesIO()
-    img.save(buf, format='JPEG', quality=80)
-    buf.seek(0)
-    
-    # 调用上传接口，只支持tenant_access_token，已正确配置
-    url = "https://open.feishu.cn/open-apis/im/v1/images"
-    files = {
-        'image': ('image.jpg', buf, 'image/jpeg')
-    }
-    data = {
-        'image_type': 'message'
-    }
-    headers = {
-        'Authorization': f'Bearer {token}'
-    }
-    res = requests.post(url, headers=headers, files=files, data=data).json()
-    if res.get("code") == 0:
-        return res["data"]["image_key"]
-    else:
-        print(f"上传图片失败：{res}")
-        return None
-
-# 抓取Steam榜单
+# 抓取Steam New & Trending榜单
 def get_steam_games():
     url = "https://store.steampowered.com/explore/new/"
     headers = {
@@ -76,50 +31,42 @@ def get_steam_games():
         })
     return games
 
-# 发送单条消息到群聊，图片直接显示
-def push_to_feishu(games, token):
-    # 组装富文本内容
-    content = []
+# 单条消息推送，飞书富文本直接显示图片
+def push_to_feishu(games):
     title = "Steam New & Trending 最新榜单"
+    content = []
     
     for game in games:
-        # 上传图片获取image_key
-        image_key = upload_image(game["img"], token)
-        if not image_key:
-            continue
-        # 添加游戏信息：标题+价格+图片
-        game_line = [
+        # 添加标题和价格
+        content.append([
             {"tag": "a", "href": game["link"], "text": f"{game['name']} - {game['price']}"},
             {"tag": "text", "text": "\n"}
-        ]
-        content.append(game_line)
-        # 添加图片，飞书会自动渲染
-        content.append([{"tag": "img", "image_key": image_key}])
+        ])
+        # 直接使用Steam的图片直链，飞书富文本支持显示网络图片
+        content.append([
+            {"tag": "img", "img_url": game["img"]}
+        ])
         content.append([{"tag": "text", "text": "\n"}])
     
-    # 组装请求体
+    # 组装飞书自定义机器人请求体
     data = {
-        "receive_id": FEISHU_CHAT_ID,
         "msg_type": "post",
-        "content": json.dumps({
+        "content": {
             "post": {
                 "zh_cn": {
                     "title": title,
                     "content": content
                 }
             }
-        })
+        }
     }
     
-    url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
-    headers = {
-        "Authorization": f'Bearer {token}',
-        "Content-Type": "application/json; charset=utf-8"
-    }
+    headers = {"Content-Type": "application/json"}
+    res = requests.post(FEISHU_WEBHOOK, headers=headers, data=json.dumps(data))
+    result = res.json()
     
-    res = requests.post(url, headers=headers, json=data).json()
-    if res.get("code") != 0:
-        print(f"推送失败，错误信息：{res}")
+    if result.get("code") != 0:
+        print(f"推送失败，错误信息：{result}")
         return False
     
     print("推送成功！所有图片已直接显示")
@@ -127,10 +74,6 @@ def push_to_feishu(games, token):
 
 if __name__ == "__main__":
     print("开始执行 Steam 热门新品榜推送任务")
-    token = get_tenant_access_token()
-    if not token:
-        print("无法获取有效访问凭证，请检查App ID和App Secret是否正确")
-        exit(1)
     games = get_steam_games()
     print(f"成功抓取当前热门新品榜前 {len(games)} 款游戏")
-    push_to_feishu(games, token)
+    push_to_feishu(games)
